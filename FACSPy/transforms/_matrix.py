@@ -73,9 +73,42 @@ class Matrix(object):
         :param sample: Sample instance with matching set of detectors
         :return: NumPy array of compensated events
         """
-        indices = [
-            sample.get_channel_index(d) for d in self.detectors
-        ]
+        # Validate that all detectors required by this matrix are present in the sample.
+        indices = []
+        missing_detectors = []
+        for d in self.detectors:
+            try:
+                idx = sample.get_channel_index(d)
+                indices.append(idx)
+            except Exception:
+                missing_detectors.append(d)
+
+        if missing_detectors:
+            sample_channels = None
+            # attempt to provide helpful context about sample channels when available
+            try:
+                if hasattr(sample, "channels"):
+                    # channels is a pandas DataFrame with index labels
+                    sample_channels = list(sample.channels.index)
+            except Exception:
+                sample_channels = None
+
+            msg = (
+                f"Compensation matrix '{self.id}' requires detectors not present in the sample: "
+                f"{missing_detectors}. Expected detectors: {self.detectors}."
+            )
+            if sample_channels is not None:
+                msg += f" Sample channels: {sample_channels}."
+            raise ValueError(msg)
+
+        # Validate matrix dimensionality matches the number of detectors/indices we resolved.
+        if self.matrix.shape[0] != len(indices):
+            raise ValueError(
+                f"Compensation matrix '{self.id}' has shape {self.matrix.shape} but "
+                f"{len(indices)} detector indices were resolved from the sample. "
+                "Ensure the matrix and detector labels align."
+            )
+
         events = sample.get_events(source='raw')
 
         return flowutils.compensate.compensate(
